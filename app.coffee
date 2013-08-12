@@ -289,7 +289,7 @@ app.post '/pem/:filename', (req, res, next) ->
 app.get '/pem/:filename', (req, res, next) ->
 
 
-app.listen 3002
+app.listen 3002, 'localhost'
 
 setInterval () ->
   console.log 'checking to see what needs backing up...'
