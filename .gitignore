@@ -1,0 +1,6 @@
+.DS_Store
+node_modules
+pemUploads/*
+public/app.js
+public/style.css
+public/client.js

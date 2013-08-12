@@ -1,0 +1,9 @@
+{
+  "gandiKey": "YOUR-KEY-HERE",
+  "accessKeyId": "AWS-ACCESSKEY-HERE", 
+  "secretAccessKey": "AWS-SECRETKEY-HERE",
+  "agsAdmin": {
+    "username": "AGS-ADMIN-NAME",
+    "password": "AGS-PW"
+  }
+}

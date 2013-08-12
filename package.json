@@ -1,0 +1,34 @@
+{
+  "name": "ArcGIS-Babysitter",
+  "version": "0.0.1",
+  "description": "Tool for managing ArcGIS Server instances on AWS",
+  "main": "app.coffee",
+  "scripts": {
+    "preinstall": "npm install -g grunt"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/mcclintock-lab/ArcGIS-Babysitter"
+  },
+  "author": "Chad Burt",
+  "license": "BSD",
+  "dependencies": {
+    "express": "3.x",
+    "aws-sdk": "1.4.x",
+    "underscore": "latest",
+    "async": "0.2.x",
+    "request": "2.25.x",
+    "backbone": "latest",
+    "backbone.stickit": "git://github.com/NYTimes/backbone.stickit",
+    "zepto": "latest",
+    "moment": "2.1.x",
+    "xmlrpc": "1.1.x"
+  },
+  "devDependencies": {
+    "grunt": "~0.4.1",
+    "grunt-contrib-watch": "~0.5.1",
+    "grunt-contrib-less": "~0.6.4",
+    "grunt-contrib-coffee": "~0.7.0",
+    "grunt-contrib-uglify": "~0.2.2"
+  }
+}
