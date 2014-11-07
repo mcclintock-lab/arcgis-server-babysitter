@@ -5,6 +5,9 @@ class Servers extends Backbone.Collection
   url: '/data'
   comparator: (server) ->
     server.get('region') + server.get('name')
+  parse: (response) ->
+    @lastUpdated = new Date(response.lastUpdated)
+    response.instances
 
 class ServerItem extends Backbone.View
   className: 'serverItem'
@@ -207,7 +210,8 @@ $(document).ready () ->
   app.servers.on 'request', () ->
     $('.icon-spin3').addClass 'animate-spin'    
   app.servers.on 'sync', () ->
-    $('.icon-spin3').removeClass 'animate-spin'    
+    $('.icon-spin3').removeClass 'animate-spin'
+    $('.lastUpdated').text "Last Updated #{app.servers.lastUpdated}"
   $('.icon-spin3').click () ->
     window.app.servers.fetch()
 

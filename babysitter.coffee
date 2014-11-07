@@ -67,12 +67,13 @@ addAGSInfo = (instance, next) ->
         next err
       else
         # grab number of services
-        base = instance.loadBalancer or instance.publicDNS + ':6080'
+        base = (instance.loadBalancer or instance.publicDNS) + ':6080'
         url = "http://#{base}/arcgis/admin/clusters/default/services" +
           "?token=#{token}&f=json"
         request.get url, (err, res, body) ->
           if err
-            next err
+            console.log 'ags token fetch didnt work for url', instance.name, url
+            next null, {}
           else
             data = JSON.parse body
             instance.services = data.services.length
@@ -84,7 +85,8 @@ addAGSInfo = (instance, next) ->
             instance.agsErrorsLink = url + '&f=html'
             request.get url + '&f=json', (err, res, body) ->
               if err
-                next err
+                console.log 'trouble getting arcgis logs for #{instance.name}'
+                next null, {}
               else
                 data = JSON.parse body
                 if _.isArray data?.logMessages
@@ -97,6 +99,7 @@ addAGSInfo = (instance, next) ->
                 next null, instance
   else
     # not accessible
+    console.log 'no loadbalancer or public dns', instance.name
     next null, instance
 
 getLoadBalancers = (next) ->
@@ -202,7 +205,8 @@ parseInstances = (data, region) ->
   for reservation in data.Reservations
     for instance in reservation.Instances
       name = _.find(instance.Tags, (t) -> t.Key is 'Name')?.Value
-      if /arcgis/.test JSON.stringify(instance)
+      instanceData = JSON.stringify(instance)
+      if /arcgis/.test(instanceData) or /arcserver/.test(instanceData) or /data-/.test(instanceData) or /gp-/.test(instanceData) or /gp\d/.test(instanceData)
         instances.push {
           id: instance.InstanceId
           name: name
@@ -221,6 +225,7 @@ parseInstances = (data, region) ->
 
 createBackup = (instance, next) ->
   ec2 = new AWS.EC2(region: instance.region)
+  console.log 'createBackup', instance
   async.map instance.volumes, (volume, callback) ->
     desc = "#{instance.name} #{volume.device} Backup -- #{moment().format('MMMM Do YYYY, h:mm:ss a')}"
     ec2.createSnapshot {VolumeId: volume.id, Description: desc}, callback
@@ -237,12 +242,9 @@ createBackup = (instance, next) ->
           callback
       , next
 
-app.use (err, req, res, next) ->
-  res.send 500, 'Something broke!'
-
-app.get '/data', (req, res, next) ->
+getAllInstances = (next) ->
   AWS.config.update(region: 'us-west-2')
-  ec2 = new AWS.EC2(region: 'us-west-2')
+  ec2 = new AWS.EC2()
   ec2.describeRegions (err, regions) ->
     if err
       next err
@@ -250,12 +252,21 @@ app.get '/data', (req, res, next) ->
       regions = regions.Regions?.map (region) -> region.RegionName
       async.concat regions, (region, callback) ->
         getInstances region, (err, instances) ->
-          callback(err, instances)
+          if err
+            console.log 'err getting instances', region, err
+          else
+          callback(null, instances or [])
       , (err, allInstances) ->
         if err
           next err
         else
-          res.json allInstances
+          next null, allInstances
+
+app.use (err, req, res, next) ->
+  res.send 500, 'Something broke!'
+
+app.get '/data', (req, res, next) ->
+  res.json {instances: instanceData, lastUpdated: lastUpdated}
 
 app.get '/', (req, res, next) ->
   fs.readFile './public/index.html', "binary", (err, file) ->
@@ -291,26 +302,72 @@ app.get '/pem/:filename', (req, res, next) ->
 
 app.listen 3002, 'localhost'
 
+instanceData = []
+lastUpdated = new Date(0)
+
 setInterval () ->
-  console.log 'checking to see what needs backing up...'
-  AWS.config.update(region: 'us-west-2')
-  ec2 = new AWS.EC2()
-  ec2.describeRegions (err, regions) ->
+  getAllInstances (err, allInstances) ->
     if err
-      next err
+      console.log 'Error getting all instances for backup'
+      console.log err
     else
-      regions = regions.Regions?.map (region) -> region.RegionName
-      async.concat regions, (region, callback) ->
-        getInstances region, (err, instances) ->
-          callback(err, instances)
-      , (err, allInstances) ->
-        if err
-          next err
-        else
-          for instance in allInstances
-            backups = instance.backups.recent.filter (b) -> b.state != 'missing'
-            time = moment(backups?[0]?.time)
-            if !backups?.length or moment().diff(time, 'days') != 0
-              console.log instance.name, 'needs backing up...'
-              createBackup(instance)
+      for instance in allInstances
+        backups = instance.backups.recent.filter (b) -> b.state != 'missing'
+        time = moment(backups?[0]?.time)
+        if !backups?.length or moment().diff(time, 'days') != 0
+          console.log instance.name, 'needs backing up...'
+          createBackup(instance)
 , 60 * 1000 * 60
+
+retrieveInstanceData = () ->
+  getAllInstances (err, allInstances) ->
+    if err
+      console.log 'Error getting all instances'
+      console.log err
+    else
+      instanceData = allInstances
+      lastUpdated = new Date()
+
+setInterval retrieveInstanceData, 2 * 60 * 1000
+
+retrieveInstanceData()
+
+reportBackups = () ->
+  console.log 'report backups'
+  getAllInstances (err, allInstances) ->
+    if err
+      console.log 'Error getting all instances for reporting to slack'
+      console.log err
+    else
+      backupStats = []
+      for instance in allInstances
+        backups = instance.backups.recent.filter (b) -> b.state != 'missing'
+        time = moment(backups?[0]?.time)
+        if !backups?.length
+          backupStats.push {
+            name: instance.name
+            lastBackup: 'unknown'
+          }
+        else
+          backupStats.push {
+            name: instance.name
+            lastBackup: "#{moment().diff(time, 'hours')} hours ago"
+          }
+      message =
+        text: "Reminder, you poor saps have #{allInstances.length} instances of ArcGIS Server running. <http://babysitter.seasketch.org/|Details>"
+      request.post {url: config.slack, json: message}, (err, httpResponse, body) ->
+        json = 
+          pretext: "Last backed up..."
+          fallback: (backupStats.map (s) -> "#{s.name}: #{s.lastBackup}").join(', ')
+          color: "#c62a06"
+          fields: backupStats.map (s) -> {title: s.name, value: s.lastBackup, short: true}
+        request.post
+          url: config.slack
+          json: json
+        , (err, res, body) ->
+          # do nothing
+
+
+setInterval reportBackups, 1000 * 60 * 60 * 24
+
+reportBackups()
