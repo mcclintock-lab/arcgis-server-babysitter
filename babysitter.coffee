@@ -356,6 +356,7 @@ reportBackups = () ->
       message =
         text: "Reminder, you poor saps have #{allInstances.length} instances of ArcGIS Server running. <http://babysitter.seasketch.org/|Details>"
       request.post {url: config.slack, json: message}, (err, httpResponse, body) ->
+        console.log(err) if err
         json = 
           pretext: "Last backed up..."
           fallback: (backupStats.map (s) -> "#{s.name}: #{s.lastBackup}").join(', ')
@@ -365,7 +366,7 @@ reportBackups = () ->
           url: config.slack
           json: json
         , (err, res, body) ->
-          # do nothing
+          console.log(err) if err
 
 
 setInterval reportBackups, 1000 * 60 * 60 * 24
