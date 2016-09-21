@@ -18,15 +18,18 @@ module.exports = (grunt) ->
         options:
           livereload: true
     uglify:
-      'public/app.js': [
-        'node_modules/zepto/zepto.min.js'
-        'node_modules/underscore/underscore.js'
-        'node_modules/backbone/backbone.js'
-        'node_modules/backbone.stickit/backbone.stickit.js'
-        'node_modules/moment/moment.js'
-        'public/dropzone.js'
-        'public/client.js'
-      ]
+      footarget: {
+        files: {
+          'public/app.js': [
+            'node_modules/underscore/underscore.js'
+            'node_modules/backbone/backbone.js'
+            'node_modules/backbone.stickit/backbone.stickit.js'
+            'node_modules/moment/moment.js'
+            'public/dropzone.js'
+            'public/client.js'
+            ]
+        }
+      },
       options:
         mangle: false
         beautify: {

@@ -24,12 +24,7 @@ class ServerItem extends Backbone.View
           name: 'href'
           observe: ['domain', 'loadBalancer', 'publicDNS']
           onGet: () ->
-            if @model.get('domain')
-              "http://#{@model.get('domain')}.seasketch.org/arcgis/rest/services"
-            else if @model.get('loadBalancer')
-              @model.get('loadBalancer') + '/arcgis/rest/services'
-            else
-              "http://#{@model.get('publicDNS')}:6080/arcgis/rest/services"
+              "http://#{@model.get('name')}:6080/arcgis/rest/services"
         }
       ]
     "h2 a.manager":
@@ -38,15 +33,29 @@ class ServerItem extends Backbone.View
           name: 'href'
           observe: ['domain', 'loadBalancer', 'publicDNS']
           onGet: () ->
-            if @model.get('domain')
-              "http://#{@model.get('domain')}.seasketch.org/arcgis/manager/"
-            else if @model.get('loadBalancer')
-              @model.get('loadBalancer') + '/arcgis/manager/'
-            else
-              "http://#{@model.get('publicDNS')}:6080/arcgis/manager/"
+              "http://#{@model.get('name')}:6080/arcgis/manager/"
         }
       ]    
     ".zone":                  "availabilityZone"
+    ".version":                  "version"
+    ".hostos":                  "hostos"
+    ".uptime":                  "uptime"
+    ".mapservices":           "mapServices"
+    ".gpservices":           "gpServices"
+    ".loglevel":
+      observe: "loglevel"
+      attributes: [
+        {
+          name: 'data-warning'
+          observe: "loglevel"
+          onGet: (lvl) ->
+            if lvl is "DEBUG"
+              true
+            else
+              false
+        }
+      ]
+
     ".state":                 
       observe: "state"
       attributes: [
@@ -126,11 +135,18 @@ class ServerItem extends Backbone.View
     super()
 
   render: () ->
+    @$el.addClass 'col-xl-3'
     @$el.html """
       <h2><a target="_blank" class="label" href="#"></a><a target="_blank" class="manager" href="#">manager</a></h2>
+      <span class="version"></span>
+      <span class="hostos small"></span>
+      <span class="uptime"></span>
       <span class="zone"></span>
       <span class="state"></span>
       <span class="services"></span>
+      <span class="mapservices"></span>
+      <span class="gpservices"></span>
+      <span class="loglevel"></span>
       <a target="_blank" rel="warnings" href=""></a>
       <a target="_blank" rel="severe" href=""></a>
       <a rel="pem" href="#" download></a>

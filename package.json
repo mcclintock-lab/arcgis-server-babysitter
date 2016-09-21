@@ -13,15 +13,14 @@
   "author": "Chad Burt",
   "license": "BSD",
   "dependencies": {
-    "express": "3.x",
-    "aws-sdk": "1.4.x",
-    "underscore": "latest",
     "async": "0.2.x",
-    "request": "2.25.x",
-    "backbone": "latest",
+    "aws-sdk": "1.4.x",
+    "backbone": "^1.3.3",
     "backbone.stickit": "git://github.com/NYTimes/backbone.stickit",
-    "zepto": "latest",
+    "express": "3.x",
     "moment": "2.1.x",
+    "request": "latest",
+    "underscore": "latest",
     "xmlrpc": "1.1.x"
   },
   "devDependencies": {

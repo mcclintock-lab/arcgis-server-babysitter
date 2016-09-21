@@ -5,7 +5,6 @@ async = require 'async'
 request = require 'request'
 config = require './config.json'
 fs = require 'fs'
-path = require 'path'
 moment = require 'moment'
 xmlrpc = require 'xmlrpc'
 
@@ -17,112 +16,171 @@ app.configure () ->
 
 AWS.config.loadFromPath('./config.json')
 
+
+cache = {
+  regions: []
+  staticServers: [
+    "data1.seasketch.org",
+    "data2.seasketch.org",
+    "data3.seasketch.org",
+    "data4.seasketch.org",
+    "data5.seasketch.org"
+  ]
+}
+
 getAGSToken = (instance, next) ->
-  base = instance.loadBalancer or instance.publicDNS + ':6080'
+  base = instance.name
   url = "http://#{base}/arcgis/admin/generateToken"
   form =
-    form:
       username: config.agsAdmin.username
       password: config.agsAdmin.password
       client: 'requestip'
       expiration: 10
       f: 'json'        
-  request
-    .post url, form, (err, res, body) ->
-      body = JSON.parse body
-      if err
-        next err
-      else if body?.messages?
+  request.post url, {form: form, timeout: 4000}, (err, res, body) ->
+      if err then return next err
+      try
+        body = JSON.parse body
+      catch e
+        console.log "AGS token parse:", e, body
+        return next e
+      if body?.messages?
         next new Error(url + ': ' + body.messages[0])
       else
         next null, body.token
 
 getDomains = (next) ->
-  api = xmlrpc.createSecureClient({
-    host: 'rpc.gandi.net',
-    port: 443,
-    path: '/xmlrpc/'
-  })
-  params = [config.gandiKey, 'seasketch.org']
-  api.methodCall 'domain.info', params, (err, value) ->
-    if err or !value?.zone_id?
-      next err
-    else
-    params[1] = value.zone_id
-    api.methodCall 'domain.zone.info', params, (err, value) ->
-      if err or !value.version
+  console.time('getDomains')
+  last = cache.domains.time.getTime()
+  since = Date.now() - last;
+  if since < cache.domains.interval
+    console.log "Cache hit on getDomains..."
+    next null, cache.domains.value
+  else
+    console.log "Cache miss on getDomains, getting..."
+    api = xmlrpc.createSecureClient({
+      host: 'rpc.gandi.net',
+      port: 443,
+      path: '/xmlrpc/'
+    })
+    params = [config.gandiKey, 'seasketch.org']
+    api.methodCall 'domain.info', params, (err, value) ->
+      if err or !value?.zone_id?
+        console.timeEnd('getDomains')
         next err
       else
-        params[2] = value.version
-        api.methodCall 'domain.zone.record.list', params, (err, value) ->
-          if err
-            next err
-          else
-            next err, value
+      params[1] = value.zone_id
+      api.methodCall 'domain.zone.info', params, (err, value) ->
+        if err or !value.version
+          console.timeEnd('getDomains')
+          next err
+        else
+          params[2] = value.version
+          api.methodCall 'domain.zone.record.list', params, (err, value) ->
+            if err
+              console.timeEnd('getDomains')
+              next err
+            else
+              console.timeEnd('getDomains')
+              cache.domains.value = value
+              cache.domains.time = Date.now()
+              next err, value
 
 addAGSInfo = (instance, next) ->
-  if instance.loadBalancer or instance.publicDNS
-    getAGSToken instance, (err, token) ->
-      if err
-        next err
-      else
-        # grab number of services
-        base = (instance.loadBalancer or instance.publicDNS) + ':6080'
-        url = "http://#{base}/arcgis/admin/clusters/default/services" +
-          "?token=#{token}&f=json"
-        request.get url, (err, res, body) ->
-          if err
-            console.log 'ags token fetch didnt work for url', instance.name, url
-            next null, {}
-          else
-            data = JSON.parse body
-            instance.services = data.services.length
-            # grab number and sampling of WARNING and SEVERE errors
-            url = "http://#{base}/arcgis/admin/logs/query" +
-              "?token=#{token}&" +
-              "filter=%7B%7D&level=WARNING&pageSize=1000&" +
-              "endTime=#{(new Date()).getTime() - (1000 * 60 * 60 * 24)}"
-            instance.agsErrorsLink = url + '&f=html'
-            request.get url + '&f=json', (err, res, body) ->
+  getAGSToken instance, (err, token) ->
+    if err
+      console.log "Could not obtain token from #{instance.name}: ", err
+      instance.notResponding = true
+      next null, instance
+    else
+      addAGSVersion instance, token, (err) ->
+        if err then return next err
+        addAGSLogLevel instance, token, (err) ->
+          if err then return next err
+          addHostOS instance, token, (err) ->
+            if err then return next err
+            # grab number of services
+            base = instance.name
+            url = "http://#{base}/arcgis/admin/clusters/default/services" +
+              "?token=#{token}&f=json"
+            request.get url, (err, res, body) ->
               if err
-                console.log 'trouble getting arcgis logs for #{instance.name}'
+                console.log 'ags token fetch didnt work for url', instance.name, url
                 next null, {}
               else
                 data = JSON.parse body
-                if _.isArray data?.logMessages
-                  messages = data.logMessages
-                  warnings = messages.filter (m) -> m.type is 'WARNING'
-                  severe = messages.filter (m) -> m.type is 'SEVERE'
-                  instance.warnings = warnings.length
-                  instance.severe = severe.length
-                  instance.exampleErrors = severe.slice(0, 5)
-                next null, instance
-  else
-    # not accessible
-    console.log 'no loadbalancer or public dns', instance.name
-    next null, instance
+                instance.services = data.services?.length
+                instance.mapServices = _.filter(data.services, (svc) -> svc.type is 'MapServer').length
+                instance.gpServices = _.filter(data.services, (svc) -> svc.type is 'GPServer').length
+                # grab number and sampling of WARNING and SEVERE errors
+                url = "http://#{base}/arcgis/admin/logs/query" +
+                  "?token=#{token}&" +
+                  "filter=%7B%7D&level=WARNING&pageSize=1000&" +
+                  "endTime=#{(new Date()).getTime() - (1000 * 60 * 60 * 24)}"
+                instance.agsErrorsLink = url + '&f=html'
+                request.get url + '&f=json', (err, res, body) ->
+                  if err
+                    console.log 'trouble getting arcgis logs for #{instance.name}'
+                    next null, {}
+                  else
+                    data = JSON.parse body
+                    if _.isArray data?.logMessages
+                      messages = data.logMessages
+                      warnings = messages.filter (m) -> m.type is 'WARNING'
+                      severe = messages.filter (m) -> m.type is 'SEVERE'
+                      instance.warnings = warnings.length
+                      instance.severe = severe.length
+                      instance.exampleErrors = severe.slice(0, 5)
+                    next null, instance
 
-getLoadBalancers = (next) ->
-  ec2 = new AWS.EC2()
-  ec2.describeRegions (err, regions) ->
+addAGSVersion = (instance, token, cb) ->
+  base = instance.name
+  url = "http://#{base}/arcgis/admin?token=#{token}&f=json"
+  request.get url, (err, res, body) ->
     if err
-      next err
+      console.log 'ags version fetch didnt work for url', instance.name, url
+      cb null, {}
     else
-      regions = regions.Regions?.map (region) -> region.RegionName
-      async.concat regions, (region, callback) ->
-        elb = new AWS.ELB(region: region)
-        elb.describeLoadBalancers (err, data) ->
-          callback err, data
-      , (err, data) ->
-        loadBalancers = []
-        for result in data
-          loadBalancers = loadBalancers.concat(
-              result.LoadBalancerDescriptions or []
-            )
-        next null, loadBalancers.filter (lb) -> 
-          /arcgis/.test lb.HealthCheck?.Target
+      data = JSON.parse body
+      instance.version = data.fullVersion
+      cb null, instance
+
+addAGSLogLevel = (instance, token, cb) ->
+  base = instance.name
+  url = "http://#{base}/arcgis/admin/logs/settings?token=#{token}&f=json"
+  request.get url, (err, res, body) ->
+    if err
+      console.log 'ags log settings fetch didnt work for url', instance.name, url
+      cb null, {}
+    else
+      data = JSON.parse body
+      instance.loglevel = data.settings.logLevel
+      cb null, instance
+
+addHostOS = (instance, token, cb) ->
+  base = instance.name
+  url = "http://#{base}/arcgis/admin/machines?token=#{token}&f=json"
+  request.get url, (err, res, body) ->
+    if err
+      console.log 'ags machines fetch didnt work for url', instance.name, url
+      cb null, {}
+    else
+      data = JSON.parse body
+      firstMachine = data.machines[0].machineName
+      url = "http://#{base}/arcgis/admin/machines/#{firstMachine}?token=#{token}&f=json"
+      request.get url, (err, res, body) ->
+        if err
+          console.log 'ags machines fetch didnt work for url', instance.name, url
+          cb null, {}
+        else
+          data = JSON.parse body
+          instance.hostos = data.platform
+          instance.uptime = Math.floor(moment.duration(Date.now() - data.ServerStartTime).asDays())
+          cb null, instance
+
 
 addBackupInfo = (instance, next) ->
+  console.time 'addBackupInfo'
   ec2 = new AWS.EC2(region: instance.region)
   params =
     Filters: [
@@ -159,46 +217,39 @@ addBackupInfo = (instance, next) ->
       count: Math.floor(snapshots.length / 2)
       recent: timeline
     }
+    console.timeEnd 'addBackupInfo'
     next err, instance
 
 getInstances = (region='us-west-2', next) ->
-  getDomains (err, domains) ->
+  
+  ec2 = new AWS.EC2(region: region)
+  ec2.describeInstances (err, data) ->
     if err
       next err
     else
-      ec2 = new AWS.EC2(region: region)
-      ec2.describeInstances (err, data) ->
+      instances = parseInstances(data, region)
+      instances = instances.filter (i) -> i.state is 'running'
+      async.each instances, addBackupInfo, (err) ->
         if err
           next err
         else
-          instances = parseInstances(data, region)
-          instances = instances.filter (i) -> i.state is 'running'
-          async.each instances, addBackupInfo, (err) ->
-            if err
-              next err
-            else
-              getLoadBalancers (err, loadBalancers) ->
-                if err
-                  next err
-                else
-                  for instance in instances
-                    lb = _.find loadBalancers, (lb) -> 
-                      instance.id in lb.Instances.map((i) -> i.InstanceId)
-                    instance.loadBalancer = lb?.DNSName
-                async.each instances, addAGSInfo, (err) ->
-                  for instance in instances
-                    domain = _.find domains, (d) -> 
-                      match = instance.loadBalancer?.toLowerCase() + '.'
-                      d.value.toLowerCase() is match
-                    if domain
-                      instance.domain = domain.name
-                  async.each instances, (instance, callback) ->
-                    filepath = __dirname + "/pemUploads/#{instance.pem}.pem"
-                    path.exists filepath, (result) ->
-                      instance.hasPem = result
-                      callback null
-                  , (err) ->
-                    next err, instances
+          async.each instances, addAGSInfo, (err) ->
+            async.each instances, (instance, callback) ->
+              filepath = __dirname + "/pemUploads/#{instance.pem}.pem"
+              fs.exists filepath, (result) ->
+                instance.hasPem = result
+                callback null
+            , (err) ->
+              next err, instances
+
+
+getStaticServers = (cb) ->
+  instances = []
+  for s in cache.staticServers
+    instances.push {name: s, hasPem: false, region: 'msi', availabilityZone: 'msi'} 
+  async.each instances, addAGSInfo, (err) ->
+    if err then return cb err
+    cb null, instances
 
 parseInstances = (data, region) ->
   instances = []
@@ -206,7 +257,7 @@ parseInstances = (data, region) ->
     for instance in reservation.Instances
       name = _.find(instance.Tags, (t) -> t.Key is 'Name')?.Value
       instanceData = JSON.stringify(instance)
-      if /arcgis/.test(instanceData) or /arcserver/.test(instanceData) or /data-/.test(instanceData) or /gp-/.test(instanceData) or /gp\d/.test(instanceData)
+      if /arcgis/.test(instanceData) or /arcserver/.test(instanceData) or /data.*-/.test(instanceData) or /gp.*-/.test(instanceData) or /gp\d/.test(instanceData)
         instances.push {
           id: instance.InstanceId
           name: name
@@ -246,21 +297,17 @@ getAllInstances = (next) ->
   AWS.config.update(region: 'us-west-2')
   ec2 = new AWS.EC2()
   ec2.describeRegions (err, regions) ->
-    if err
-      next err
-    else
-      regions = regions.Regions?.map (region) -> region.RegionName
-      async.concat regions, (region, callback) ->
-        getInstances region, (err, instances) ->
-          if err
-            console.log 'err getting instances', region, err
-          else
-          callback(null, instances or [])
-      , (err, allInstances) ->
-        if err
-          next err
-        else
-          next null, allInstances
+    if err then return next err
+    regions = regions.Regions?.map (region) -> region.RegionName
+    async.concat regions, (region, callback) ->
+      getInstances region, (err, instances) ->
+        if err then console.log 'err getting instances', region, err
+        else callback(null, instances or [])
+    , (err, allInstances) ->
+      if err then return next err
+      getStaticServers (err, staticinstances) ->
+        if err then return next err
+        next null, _.union(allInstances, staticinstances)
 
 app.use (err, req, res, next) ->
   res.send 500, 'Something broke!'
@@ -312,7 +359,7 @@ setInterval () ->
       console.log err
     else
       for instance in allInstances
-        backups = instance.backups.recent.filter (b) -> b.state != 'missing'
+        backups = instance.backups?.recent.filter (b) -> b.state != 'missing'
         time = moment(backups?[0]?.time)
         if !backups?.length or moment().diff(time, 'days') != 0
           console.log instance.name, 'needs backing up...'
@@ -341,7 +388,7 @@ reportBackups = () ->
     else
       backupStats = []
       for instance in allInstances
-        backups = instance.backups.recent.filter (b) -> b.state != 'missing'
+        backups = instance.backups?.recent.filter (b) -> b.state != 'missing'
         time = moment(backups?[0]?.time)
         if !backups?.length
           backupStats.push {
@@ -355,7 +402,7 @@ reportBackups = () ->
           }
       message =
         text: "Reminder, you poor saps have #{allInstances.length} instances of ArcGIS Server running. <http://babysitter.seasketch.org/|Details>"
-      request.post {url: config.slack, json: message}, (err, httpResponse, body) ->
+      request.post {uri: config.slack, json: message}, (err, httpResponse, body) ->
         console.log(err) if err
         json = 
           pretext: "Last backed up..."
@@ -363,7 +410,7 @@ reportBackups = () ->
           color: "#c62a06"
           fields: backupStats.map (s) -> {title: s.name, value: s.lastBackup, short: true}
         request.post
-          url: config.slack
+          uri: config.slack
           json: json
         , (err, res, body) ->
           console.log(err) if err
