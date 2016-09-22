@@ -347,7 +347,7 @@ app.post '/pem/:filename', (req, res, next) ->
 app.get '/pem/:filename', (req, res, next) ->
 
 
-app.listen 4002, 'localhost'
+app.listen 4002
 
 instanceData = []
 lastUpdated = new Date(0)
