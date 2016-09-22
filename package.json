@@ -14,7 +14,7 @@
   "license": "BSD",
   "dependencies": {
     "async": "0.2.x",
-    "aws-sdk": "1.4.x",
+    "aws-sdk": "2.6.4",
     "backbone": "^1.3.3",
     "backbone.stickit": "git://github.com/NYTimes/backbone.stickit",
     "express": "3.x",
