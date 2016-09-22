@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {
+      "name": "babysitter",
+      "script": "babysitter.coffee",
+      "watch": false,
+      "log_date_format" : "YYYY-MM-DD HH:mm Z"
+    }
+  ]
+}
