@@ -366,7 +366,11 @@ setInterval () ->
         time = moment(backups?[0]?.time)
         if !backups?.length or moment().diff(time, 'days') != 0
           console.log instance.name, 'needs backing up...'
-          createBackup(instance)
+          createBackup instance, (err) ->
+            if err
+              console.log "Could not trigger backup on #{instance.name}: ", err
+            else
+              console.log "Triggered backup on #{instance.name}"
 , 60 * 1000 * 60
 
 retrieveInstanceData = () ->
