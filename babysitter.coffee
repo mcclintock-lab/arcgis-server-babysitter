@@ -277,6 +277,9 @@ parseInstances = (data, region) ->
 createBackup = (instance, next) ->
   ec2 = new AWS.EC2(region: instance.region)
   console.log 'createBackup', instance
+  if instance.availabilityZone is 'msi'
+    console.log "Cannot backup MSI-hosted instances"
+    return next()
   async.map instance.volumes, (volume, callback) ->
     desc = "#{instance.name} #{volume.device} Backup -- #{moment().format('MMMM Do YYYY, h:mm:ss a')}"
     ec2.createSnapshot {VolumeId: volume.id, Description: desc}, callback
