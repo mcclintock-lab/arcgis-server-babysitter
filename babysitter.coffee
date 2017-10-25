@@ -257,7 +257,7 @@ parseInstances = (data, region) ->
     for instance in reservation.Instances
       name = _.find(instance.Tags, (t) -> t.Key is 'Name')?.Value
       instanceData = JSON.stringify(instance)
-      if /arcgis/.test(instanceData) or /arcserver/.test(instanceData) or /data.*-/.test(instanceData) or /gp.*-/.test(instanceData) or /gp\d/.test(instanceData) or /minke/.test(instanceData)
+      if /arcgis/.test(instanceData) or /arcserver/.test(instanceData) or /data.*-/.test(instanceData) or /gp.*-/.test(instanceData) or /gp\d/.test(instanceData) or /minke.*/.test(instanceData) or /fin.*/.test(instanceData)
         instances.push {
           id: instance.InstanceId
           name: name
