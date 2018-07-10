@@ -254,7 +254,7 @@ parseInstances = (data, region) ->
     for instance in reservation.Instances
       name = _.find(instance.Tags, (t) -> t.Key is 'Name')?.Value
       instanceData = JSON.stringify(instance)
-      if /arcgis/.test(instanceData) or /arcserver/.test(instanceData) or /data.*-/.test(instanceData) or /gp.*-/.test(instanceData) or /gp\d/.test(instanceData)
+      if /arcgis/.test(instanceData) or /arcserver/.test(instanceData) or /data.*-/.test(instanceData) or /gp.*-/.test(instanceData) or /gp\d/.test(instanceData) or /minke.*/.test(instanceData) or /fin.*/.test(instanceData)
         instances.push {
           id: instance.InstanceId
           name: name
@@ -274,6 +274,9 @@ parseInstances = (data, region) ->
 createBackup = (instance, next) ->
   ec2 = new AWS.EC2(region: instance.region)
   console.log 'createBackup', instance
+  if instance.availabilityZone is 'msi'
+    console.log "Cannot backup MSI-hosted instances"
+    return next()
   async.map instance.volumes, (volume, callback) ->
     desc = "#{instance.name} #{volume.device} Backup -- #{moment().format('MMMM Do YYYY, h:mm:ss a')}"
     ec2.createSnapshot {VolumeId: volume.id, Description: desc}, callback
@@ -348,7 +351,11 @@ setInterval () ->
         time = moment(backups?[0]?.time)
         if !backups?.length or moment().diff(time, 'days') != 0
           console.log instance.name, 'needs backing up...'
-          createBackup(instance)
+          createBackup instance, (err) ->
+            if err
+              console.log "Could not trigger backup on #{instance.name}: ", err
+            else
+              console.log "Triggered backup on #{instance.name}"
 , 60 * 1000 * 60
 
 retrieveInstanceData = () ->
