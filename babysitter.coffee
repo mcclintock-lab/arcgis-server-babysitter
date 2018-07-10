@@ -329,6 +329,9 @@ app.post '/backup', (req, res, next) ->
     else
       res.json {okay: true}
 
+app.get '/healthcheck', (req, res, next) ->
+  res.send 200, "I'm here"
+
 app.listen 4002
 
 instanceData = []
