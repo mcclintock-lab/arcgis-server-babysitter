@@ -11,7 +11,6 @@ xmlrpc = require 'xmlrpc'
 app = express()
 app.configure () ->
   app.use express.static(__dirname + '/public')
-  app.use '/pem', express.static(__dirname + '/pemUploads')
   app.use express.bodyParser()
 
 AWS.config.loadFromPath('./config.json')
@@ -30,7 +29,7 @@ cache = {
 
 getAGSToken = (instance, next) ->
   base = instance.name
-  url = "http://#{base}/arcgis/admin/generateToken"
+  url = "https://#{base}/arcgis/admin/generateToken"
   form =
       username: config.agsAdmin.username
       password: config.agsAdmin.password
@@ -180,7 +179,6 @@ addHostOS = (instance, token, cb) ->
 
 
 addBackupInfo = (instance, next) ->
-  console.time 'addBackupInfo'
   ec2 = new AWS.EC2(region: instance.region)
   params =
     Filters: [
@@ -217,7 +215,6 @@ addBackupInfo = (instance, next) ->
       count: Math.floor(snapshots.length / 2)
       recent: timeline
     }
-    console.timeEnd 'addBackupInfo'
     next err, instance
 
 getInstances = (region='us-west-2', next) ->
@@ -331,21 +328,6 @@ app.post '/backup', (req, res, next) ->
       next err
     else
       res.json {okay: true}
-
-app.post '/pem/:filename', (req, res, next) ->
-  fs.readFile req.files.file.path, (err, data) ->
-    if err
-      next err
-    else
-      newPath = __dirname + "/pemUploads/" + req.param('filename') + '.pem'
-      fs.writeFile newPath, data, (err) ->
-        if err
-          next err
-        else
-          res.json {okay: true}  
-
-app.get '/pem/:filename', (req, res, next) ->
-
 
 app.listen 4002
 

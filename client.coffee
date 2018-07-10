@@ -24,7 +24,7 @@ class ServerItem extends Backbone.View
           name: 'href'
           observe: ['domain', 'loadBalancer', 'publicDNS']
           onGet: () ->
-              "http://#{@model.get('name')}:6080/arcgis/rest/services"
+              "https://#{@model.get('name')}/arcgis/rest/services"
         }
       ]
     "h2 a.manager":
@@ -33,7 +33,7 @@ class ServerItem extends Backbone.View
           name: 'href'
           observe: ['domain', 'loadBalancer', 'publicDNS']
           onGet: () ->
-              "http://#{@model.get('name')}:6080/arcgis/manager/"
+              "https://#{@model.get('name')}/arcgis/manager/"
         }
       ]    
     ".zone":                  "availabilityZone"
@@ -77,37 +77,13 @@ class ServerItem extends Backbone.View
               false
         }
       ]
-    "[rel=pem]":
-      observe: ["pem", "hasPem"]
-      visible: () ->
-        @model.get('hasPem')
-      updateView: true
-      onGet: () -> "#{@model.get('pem')}.pem"
-      attributes: [
-        {
-          name: 'download'
-          observe: 'pem'
-          onGet: (v) -> "#{v}.pem"
-        }
-        {
-          name: 'href'
-          observe: 'pem'
-          onGet: (v) -> "/pem/#{v}.pem"
-        }
-      ]
-    ".missing-pem":
-      observe: ["hasPem", "pem"]
-      visible: () -> !@model.get('hasPem')
-      updateView: true
-      onGet: () ->
-        "Missing #{@model.get('pem')}.pem. Drag file to this box to upload"
     '[rel="manager"]':
       attributes: [
         {
           name: 'href'
           observe: 'loadBalancer'
           onGet: (v) ->
-            "http://#{v}/arcgis/manager/"
+            "https://#{v}/arcgis/manager/"
         }
       ]
     '[rel="warnings"]':
@@ -149,31 +125,10 @@ class ServerItem extends Backbone.View
       <span class="loglevel"></span>
       <a target="_blank" rel="warnings" href=""></a>
       <a target="_blank" rel="severe" href=""></a>
-      <a rel="pem" href="#" download></a>
-      <span class="missing-pem">Missing pem. Drag .pem file here to upload.</span>
-      <a href="#" rel="ssh">ssh</a>
       <h3>backups <a href="#" rel="backup">backup now</a></h3>
       <div class="backups"></div>
     """
     @stickit()
-    dropzone = new Dropzone(@el, { url: "/pem/" + @model.get('pem')})
-    dropzone.on 'dragstart', () =>
-      console.log 'dragstart'
-      @$el.addClass 'dragstart'
-    dropzone.on 'dragover', () =>
-      console.log 'dragover'
-      @$el.addClass 'dragover'
-    dropzone.on 'dragleave', () =>
-      @$el.removeClass 'dragover dragstart'
-    dropzone.on 'dragleave', () =>
-      @$el.removeClass 'dragover dragstart'
-    dropzone.on 'complete', (data, a) =>
-      @$el.removeClass 'dragover dragstart'
-      if data.accepted
-        @model.set 'hasPem', true
-      else
-        alert "Failed to upload .pem"
-
     @drawBackups()
 
   drawBackups: () =>
