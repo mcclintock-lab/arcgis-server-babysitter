@@ -13,7 +13,9 @@ app.configure () ->
   app.use express.static(__dirname + '/public')
   app.use express.bodyParser()
 
-AWS.config.loadFromPath('./config.json')
+AWS.Credentials =
+  accessKeyId: config.accessKeyId,
+  secretAccessKey: config.secretAccessKey
 
 
 cache = {
@@ -35,7 +37,7 @@ getAGSToken = (instance, next) ->
       password: config.agsAdmin.password
       client: 'requestip'
       expiration: 10
-      f: 'json'        
+      f: 'json'
   request.post url, {form: form, timeout: 4000}, (err, res, body) ->
       if err then return next err
       try
@@ -218,7 +220,7 @@ addBackupInfo = (instance, next) ->
     next err, instance
 
 getInstances = (region='us-west-2', next) ->
-  
+
   ec2 = new AWS.EC2(region: region)
   ec2.describeInstances (err, data) ->
     if err
@@ -243,7 +245,7 @@ getInstances = (region='us-west-2', next) ->
 getStaticServers = (cb) ->
   instances = []
   for s in cache.staticServers
-    instances.push {name: s, hasPem: false, region: 'msi', availabilityZone: 'msi'} 
+    instances.push {name: s, hasPem: false, region: 'msi', availabilityZone: 'msi'}
   async.each instances, addAGSInfo, (err) ->
     if err then return cb err
     cb null, instances
@@ -263,7 +265,7 @@ parseInstances = (data, region) ->
           publicDNS: instance.PublicDnsName
           region: region
           availabilityZone: instance.Placement.AvailabilityZone
-          volumes: instance.BlockDeviceMappings.map (block) -> 
+          volumes: instance.BlockDeviceMappings.map (block) ->
             {
               device: block.DeviceName
               id: block.Ebs.VolumeId
@@ -289,7 +291,7 @@ createBackup = (instance, next) ->
           { Key: 'agsErrors', Value: instance.severe.toString() }
           { Key: 'agsServices', Value: instance.services.toString()}
         ]
-        ec2.createTags {Resources: [snapshot.SnapshotId], Tags: tags}, 
+        ec2.createTags {Resources: [snapshot.SnapshotId], Tags: tags},
           callback
       , next
 
@@ -309,6 +311,38 @@ getAllInstances = (next) ->
         if err then return next err
         next null, _.union(allInstances, staticinstances)
 
+getRegionSnapshots = (region, cb) =>
+  AWS.config.update(region: 'us-west-2')
+  ec2 = new AWS.EC2()
+  ec2.describeSnapshots
+    Filters: [
+      {
+        Name: 'tag-key:agsErrors',
+        Values: []
+      },
+      {
+        Name: 'tag-key:agsServices',
+        Values: []
+      },
+    ]
+  , (err, data) ->
+    console.log("Got " + data.length + " snapshots")
+    console.log(data[0])
+
+
+getAllSnapshots = (cb) =>
+  AWS.config.update(region: 'us-west-2')
+  ec2 = new AWS.EC2()
+  ec2.describeRegions (err, regions) ->
+    if err then return next err
+    regions = regions.Regions?.map (region) -> region.RegionName
+    async.concat regions, (region, callback) ->
+      getRegionSnapshots region, (err, snaps) ->
+        if err then console.log('err getting snapshots', region, err)
+        else callback(null, snaps or [])
+    , cb
+
+
 app.use (err, req, res, next) ->
   res.send 500, 'Something broke!'
 
@@ -323,6 +357,10 @@ app.get '/', (req, res, next) ->
       res.writeHead(200)
       res.write(file, "binary")
       res.end()
+
+app.get '/snapshots', (req, res, next) ->
+  getAllSnapshots () ->
+    res.send 200
 
 app.post '/backup', (req, res, next) ->
   instance = req.body
@@ -396,7 +434,7 @@ reportBackups = () ->
         text: "Reminder, you poor saps have #{allInstances.length} instances of ArcGIS Server running. <http://babysitter.seasketch.org/|Details>"
       request.post {uri: config.slack, json: message}, (err, httpResponse, body) ->
         console.log(err) if err
-        json = 
+        json =
           pretext: "Last backed up..."
           fallback: (backupStats.map (s) -> "#{s.name}: #{s.lastBackup}").join(', ')
           color: "#c62a06"
