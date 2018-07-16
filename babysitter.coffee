@@ -102,7 +102,7 @@ addAGSInfo = (instance, next) ->
             if err then return next err
             # grab number of services
             base = instance.name
-            url = "http://#{base}/arcgis/admin/clusters/default/services" +
+            url = "https://#{base}/arcgis/admin/clusters/default/services" +
               "?token=#{token}&f=json"
             request.get url, (err, res, body) ->
               if err
@@ -114,7 +114,7 @@ addAGSInfo = (instance, next) ->
                 instance.mapServices = _.filter(data.services, (svc) -> svc.type is 'MapServer').length
                 instance.gpServices = _.filter(data.services, (svc) -> svc.type is 'GPServer').length
                 # grab number and sampling of WARNING and SEVERE errors
-                url = "http://#{base}/arcgis/admin/logs/query" +
+                url = "https://#{base}/arcgis/admin/logs/query" +
                   "?token=#{token}&" +
                   "filter=%7B%7D&level=WARNING&pageSize=1000&" +
                   "endTime=#{(new Date()).getTime() - (1000 * 60 * 60 * 24)}"
@@ -136,7 +136,7 @@ addAGSInfo = (instance, next) ->
 
 addAGSVersion = (instance, token, cb) ->
   base = instance.name
-  url = "http://#{base}/arcgis/admin?token=#{token}&f=json"
+  url = "https://#{base}/arcgis/admin?token=#{token}&f=json"
   request.get url, (err, res, body) ->
     if err
       console.log 'ags version fetch didnt work for url', instance.name, url
@@ -148,7 +148,7 @@ addAGSVersion = (instance, token, cb) ->
 
 addAGSLogLevel = (instance, token, cb) ->
   base = instance.name
-  url = "http://#{base}/arcgis/admin/logs/settings?token=#{token}&f=json"
+  url = "https://#{base}/arcgis/admin/logs/settings?token=#{token}&f=json"
   request.get url, (err, res, body) ->
     if err
       console.log 'ags log settings fetch didnt work for url', instance.name, url
@@ -160,7 +160,7 @@ addAGSLogLevel = (instance, token, cb) ->
 
 addHostOS = (instance, token, cb) ->
   base = instance.name
-  url = "http://#{base}/arcgis/admin/machines?token=#{token}&f=json"
+  url = "https://#{base}/arcgis/admin/machines?token=#{token}&f=json"
   request.get url, (err, res, body) ->
     if err
       console.log 'ags machines fetch didnt work for url', instance.name, url
@@ -168,7 +168,7 @@ addHostOS = (instance, token, cb) ->
     else
       data = JSON.parse body
       firstMachine = data.machines[0].machineName
-      url = "http://#{base}/arcgis/admin/machines/#{firstMachine}?token=#{token}&f=json"
+      url = "https://#{base}/arcgis/admin/machines/#{firstMachine}?token=#{token}&f=json"
       request.get url, (err, res, body) ->
         if err
           console.log 'ags machines fetch didnt work for url', instance.name, url
@@ -312,22 +312,30 @@ getAllInstances = (next) ->
         next null, _.union(allInstances, staticinstances)
 
 getRegionSnapshots = (region, cb) =>
-  AWS.config.update(region: 'us-west-2')
+  AWS.config.update(region: region)
+  console.log("Reading ", region)
   ec2 = new AWS.EC2()
   ec2.describeSnapshots
     Filters: [
       {
-        Name: 'tag-key:agsErrors',
-        Values: []
-      },
-      {
-        Name: 'tag-key:agsServices',
-        Values: []
-      },
+        Name: 'tag-key',
+        Values: ['agsErrors', 'agsServices']
+      }
     ]
   , (err, data) ->
-    console.log("Got " + data.length + " snapshots")
-    console.log(data[0])
+    if(err)
+      console.log(err)
+    else
+      old = []
+      cutoff = moment().subtract(90, 'days')
+      console.log("Got " + data.Snapshots.length + " snapshots from ", region)
+      _.forEach(data.Snapshots, (s) =>
+        taken = moment(s.StartTime)
+        if taken.isBefore(cutoff)
+          old.push(s.SnapshotId)
+      )
+      console.log(old.length, "of them are older than 90 days.")
+    cb(err, old)
 
 
 getAllSnapshots = (cb) =>
@@ -336,9 +344,11 @@ getAllSnapshots = (cb) =>
   ec2.describeRegions (err, regions) ->
     if err then return next err
     regions = regions.Regions?.map (region) -> region.RegionName
-    async.concat regions, (region, callback) ->
+    async.concatSeries regions, (region, callback) ->
       getRegionSnapshots region, (err, snaps) ->
-        if err then console.log('err getting snapshots', region, err)
+        if err
+          console.log('err getting snapshots', region, err)
+          cb(err)
         else callback(null, snaps or [])
     , cb
 
@@ -359,7 +369,17 @@ app.get '/', (req, res, next) ->
       res.end()
 
 app.get '/snapshots', (req, res, next) ->
-  getAllSnapshots () ->
+  getAllSnapshots (err, allSnaps) ->
+    console.log("About to delete #{allSnaps.length} snapshots")
+    allSnaps.forEach( (s) =>
+      params = {
+        SnapshotId: s
+      };
+      ec2.deleteSnapshot(params, (err, data) =>
+        if (err) console.log(err, err.stack)
+        else     console.log(data);
+      )
+    )
     res.send 200
 
 app.post '/backup', (req, res, next) ->
@@ -431,7 +451,7 @@ reportBackups = () ->
             lastBackup: "#{moment().diff(time, 'hours')} hours ago"
           }
       message =
-        text: "Reminder, you poor saps have #{allInstances.length} instances of ArcGIS Server running. <http://babysitter.seasketch.org/|Details>"
+        text: "Reminder, you poor saps have #{allInstances.length} instances of ArcGIS Server running. <https://babysitter.seasketch.org/|Details>"
       request.post {uri: config.slack, json: message}, (err, httpResponse, body) ->
         console.log(err) if err
         json =
