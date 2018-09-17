@@ -13,7 +13,7 @@ app.configure () ->
   app.use express.static(__dirname + '/public')
   app.use express.bodyParser()
 
-AWS.Credentials =
+AWS.config.credentials =
   accessKeyId: config.accessKeyId,
   secretAccessKey: config.secretAccessKey
 
