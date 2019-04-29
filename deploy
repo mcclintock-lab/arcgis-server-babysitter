@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+echo "----------------------------------------------------------"
+echo "Deploying client. Use 'sls deploy' to deploy microservices"
+echo "----------------------------------------------------------"
+grunt
+aws s3 sync --exclude="*.json" public/ s3://babysitter.seasketch.org
+aws cloudfront create-invalidation --distribution-id E247WOPT6TGNZ3 --paths /* > /dev/null 2>&1

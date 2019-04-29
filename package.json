@@ -4,7 +4,8 @@
   "description": "Tool for managing ArcGIS Server instances on AWS",
   "main": "app.coffee",
   "scripts": {
-    "preinstall": "npm install -g grunt"
+    "preinstall": "npm install -g grunt",
+    "deploy": "./deploy"
   },
   "repository": {
     "type": "git",
@@ -14,20 +15,25 @@
   "license": "BSD",
   "dependencies": {
     "async": "0.2.x",
-    "aws-sdk": "2.6.4",
+    "aws-sdk": "^2.444.0",
     "backbone": "^1.3.3",
     "backbone.stickit": "git://github.com/NYTimes/backbone.stickit",
+    "debug": "^4.1.1",
     "express": "3.x",
-    "moment": "2.1.x",
+    "moment": "^2.1.0",
+    "ms": "^2.1.1",
+    "node-fetch": "^2.4.0",
     "request": "latest",
+    "serverless-dotenv-plugin": "^2.0.1",
     "underscore": "latest",
     "xmlrpc": "1.1.x"
   },
   "devDependencies": {
     "grunt": "~0.4.1",
-    "grunt-contrib-watch": "~0.5.1",
-    "grunt-contrib-less": "~0.6.4",
     "grunt-contrib-coffee": "~0.7.0",
-    "grunt-contrib-uglify": "~0.2.2"
+    "grunt-contrib-less": "~0.6.4",
+    "grunt-contrib-uglify": "~0.2.2",
+    "grunt-contrib-watch": "~0.5.1",
+    "serverless-offline": "^4.9.4"
   }
 }

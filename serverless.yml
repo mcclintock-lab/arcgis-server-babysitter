@@ -1,0 +1,96 @@
+service: babysitter
+
+plugins:
+  - serverless-offline
+  - serverless-dotenv-plugin
+provider:
+  name: aws
+  runtime: nodejs8.10
+  stage: production
+  region: us-west-2
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "s3:PutObject"
+      Resource: { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "BabysitterBucket" } ] ]  }
+    - Effect: "Allow"
+      Action:
+        - "s3:PutObject"
+      Resource:
+        Fn::Join:
+          - ""
+          - - "arn:aws:s3:::"
+            - "Ref" : "BabysitterBucket"
+            - "/*"
+    - Effect: "Allow"
+      Action:
+        - "ec2:CreateSnapshot"
+        - "ec2:CreateTags"
+        - "ec2:Describe*"
+      Resource:
+        - "*"
+
+resources:
+  Resources:
+    BabysitterBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: 'babysitter.seasketch.org'
+        # Set the CORS policy
+        CorsConfiguration:
+          CorsRules:
+            -
+              AllowedOrigins:
+                - '*'
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              MaxAge: 3000
+    BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        PolicyDocument:
+          Id: BabysitterBucketPolicy
+          Version: "2012-10-17"
+          Statement:
+            - Sid: PublicReadForGetBucketObjects
+              Effect: Allow
+              Principal: '*'
+              Action: 's3:GetObject'
+              Resource: !Join 
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref BabysitterBucket
+                  - /*
+        Bucket: !Ref BabysitterBucket
+  Outputs:
+    WebsiteURL:
+      Value: !GetAtt 
+        - BabysitterBucket
+        - WebsiteURL
+      Description: URL for website hosted on S3
+    S3BucketSecureURL:
+      Value: !Join 
+        - ''
+        - - 'https://'
+          - !GetAtt 
+            - BabysitterBucket
+            - DomainName
+      Description: Name of S3 bucket to hold website content
+
+functions:
+  updateInstanceInfo:
+    handler: handlers.updateInstanceInfo
+    timeout: 60
+    events:
+      - schedule: rate(15 minutes)
+  backup:
+    handler: handlers.backup
+    timeout: 60
+    events:
+      - schedule: rate(30 minutes)

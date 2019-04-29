@@ -2,7 +2,7 @@ class Server extends Backbone.Model
 
 class Servers extends Backbone.Collection
   model: Server
-  url: '/data'
+  url: './instances.json'
   comparator: (server) ->
     server.get('region') + server.get('name')
   parse: (response) ->
@@ -42,6 +42,22 @@ class ServerItem extends Backbone.View
     ".uptime":                  "uptime"
     ".mapservices":           "mapServices"
     ".gpservices":           "gpServices"
+    ":el":
+      observe: "healthy"
+      update: ($el, val) ->
+        $el.attr('data-healthy', val)
+      onGet: (healthy) ->
+        if healthy
+          "healthy"
+        else
+          "unhealthy"
+    ".healthy":
+      observe: "healthy"
+      onGet: (healthy) ->
+        if healthy
+          "healthy"
+        else
+          "UNHEALTHY!"
     ".loglevel":
       observe: "loglevel"
       attributes: [
@@ -114,6 +130,7 @@ class ServerItem extends Backbone.View
     @$el.addClass 'col-xl-3'
     @$el.html """
       <h2><a target="_blank" class="label" href="#"></a><a target="_blank" class="manager" href="#">manager</a></h2>
+      <span class="healthy"></span>
       <span class="version"></span>
       <span class="hostos small"></span>
       <span class="uptime"></span>
@@ -125,7 +142,7 @@ class ServerItem extends Backbone.View
       <span class="loglevel"></span>
       <a target="_blank" rel="warnings" href=""></a>
       <a target="_blank" rel="severe" href=""></a>
-      <h3>backups <a href="#" rel="backup">backup now</a></h3>
+      <h3>backups</h3>
       <div class="backups"></div>
     """
     @stickit()
@@ -152,27 +169,6 @@ class ServerItem extends Backbone.View
         <div class="backup" title="#{title}" data-status="#{status}"></div>
       """
     @$('.backups').html html
-
-  backup: () ->
-    data = JSON.stringify(@model.toJSON())
-    @$('[rel=backup]').hide()
-    $.ajax({
-      type: "POST"
-      url: '/backup'
-      data: data
-      dataType: 'json'
-      contentType:"application/json; charset=utf-8"
-      success: () =>
-        @$('[rel=backup]').show()
-        alert "Created backup"
-      error: () =>
-        @$('[rel=backup]').show()
-        alert "Problem creating backup"
-    })
-
-  ssh: () ->
-    cmd = "ssh -i ~/#{@model.get('pem')}.pem ubuntu@#{@model.get('publicDNS')}"
-    window.prompt "Download the pem file and connect to this server using the following command. Make sure that the ssh port is open on this server (via the aws console Security Groups configuration).", cmd
 
 window.app = window
 

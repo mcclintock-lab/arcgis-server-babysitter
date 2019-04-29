@@ -5,3 +5,5 @@ public/app.js
 public/style.css
 public/client.js
 config.json
+.env
+.serverless
